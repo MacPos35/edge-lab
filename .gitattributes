@@ -1,0 +1,6 @@
+# Force LF on checkout so the Linux GitHub Actions runner doesn't choke on CRLF
+# in the workflow's shell `run:` blocks ($'\r': command not found).
+* text=auto eol=lf
+
+# SQLite DB is binary — never normalize line endings or diff as text.
+*.sqlite binary

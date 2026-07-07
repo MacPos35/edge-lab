@@ -1,0 +1,9 @@
+# Regenerated every run — no need to version.
+__pycache__/
+*.pyc
+*.log
+
+# SQLite WAL sidecars: transient. We checkpoint into edge_lab.sqlite before commit,
+# then commit only the single self-contained .sqlite (which is NOT ignored).
+*.sqlite-wal
+*.sqlite-shm

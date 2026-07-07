@@ -1,0 +1,6 @@
+# The harness uses only the Python standard library (urllib, sqlite3, math, statistics,
+# random) so it runs with a bare Python 3.9+ install and no network trust issues.
+#
+# 'requests' is optional -- logger.py/resolve.py use urllib to avoid any dependency.
+# Uncomment if you prefer to rewrite the HTTP calls with requests.
+# requests>=2.31
