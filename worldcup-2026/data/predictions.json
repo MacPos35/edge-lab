@@ -225,7 +225,14 @@
    "date": "2026-07-07T20:00Z",
    "stage": "r16",
    "p_adv_w0": 0.4161,
-   "p_adv_w1": 0.3625
+   "p_adv_w1": 0.3625,
+   "graded": true,
+   "home_advanced": true,
+   "final_score": "0-0",
+   "detail": "FT-Pens",
+   "brier": 0.3304,
+   "brier_w0": 0.3409,
+   "brier_w1": 0.4064
   },
   "760510": {
    "home": "France",
@@ -257,7 +264,14 @@
    "date": "2026-07-09T20:00Z",
    "stage": "qf",
    "p_adv_w0": 0.6796,
-   "p_adv_w1": 0.7528
+   "p_adv_w1": 0.7528,
+   "graded": true,
+   "home_advanced": true,
+   "final_score": "2-0",
+   "detail": "FT",
+   "brier": 0.0846,
+   "brier_w0": 0.1027,
+   "brier_w1": 0.0611
   },
   "760512": {
    "home": "Norway",
@@ -322,6 +336,38 @@
    "stage": "qf",
    "p_adv_w0": 0.7514,
    "p_adv_w1": 0.8425
+  },
+  "760513": {
+   "home": "Argentina",
+   "away": "Switzerland",
+   "lam_home": 1.528,
+   "lam_away": 1.176,
+   "p_home": 0.4419,
+   "p_draw": 0.2774,
+   "p_away": 0.2806,
+   "p_adv": 0.592,
+   "top_scores": [
+    [
+     1,
+     1,
+     0.1323
+    ],
+    [
+     2,
+     1,
+     0.0919
+    ],
+    [
+     1,
+     0,
+     0.0903
+    ]
+   ],
+   "issued_at": "2026-07-10T04:19Z",
+   "date": "2026-07-12T01:00Z",
+   "stage": "qf",
+   "p_adv_w0": 0.675,
+   "p_adv_w1": 0.4518
   }
  },
  "champion_history": {
@@ -351,14 +397,23 @@
    "Belgium": 0.0335,
    "Norway": 0.0314,
    "Switzerland": 0.0239
+  },
+  "2026-07-10": {
+   "France": 0.3602,
+   "Spain": 0.3082,
+   "Argentina": 0.1224,
+   "England": 0.0918,
+   "Switzerland": 0.0615,
+   "Norway": 0.03,
+   "Belgium": 0.0259
   }
  },
- "generated_at": "2026-07-07T18:35:50Z",
- "matches_played": 95,
+ "generated_at": "2026-07-10T04:19:16Z",
+ "matches_played": 97,
  "brier": {
-  "n": 5,
-  "mean": 0.2417,
-  "mean_w0": 0.1563,
-  "mean_w1": 0.3968
+  "n": 7,
+  "mean": 0.2319,
+  "mean_w0": 0.175,
+  "mean_w1": 0.3502
  }
 }
