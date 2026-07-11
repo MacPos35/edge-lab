@@ -7,7 +7,7 @@ simulates the remaining bracket for champion odds, grades its own past predictio
 (binary Brier on P(advance) — predictions are frozen at issue, never revised), and
 renders wc_tab.html, a fragment the polymarket-edge-lab dashboard includes as a tab.
 
-    python predict.py              # daily run (Task Scheduler, 04:30 local)
+    python predict.py              # daily run (GitHub Actions, 04:xx UTC slot)
     python predict.py --selftest   # synthetic checks, no network
 
 Toy model on ~5 games/team + priors — NOT a betting signal (execution is blocked
@@ -148,6 +148,10 @@ def parse_events(data):
             home=home, away=away,
         ))
     matches.sort(key=lambda m: (m["date"], m["id"]))
+    expected = sum(n for _, n in STAGE_SLICES)
+    if len(matches) != expected:
+        log(f"warning: feed has {len(matches)} events, expected {expected} — "
+            "stage labels may be wrong")
     i = 0
     by_stage = {}
     for stage, n in STAGE_SLICES:
@@ -291,7 +295,6 @@ def simulate_champion(nodes, index, factors, n_sims=N_SIMS, rng=None):
         return cache[key]
 
     counts = {}
-    final_node = index[("final", 0)]
     for _ in range(n_sims):
         won = {}
         for nd in nodes:
@@ -303,7 +306,6 @@ def simulate_champion(nodes, index, factors, n_sims=N_SIMS, rng=None):
                 h if rng.random() < p_adv(h, a, nd["venue_country"]) else a)
         champ = won[("final", 0)]
         counts[champ] = counts.get(champ, 0) + 1
-    del final_node
     return {t: c / n_sims for t, c in sorted(counts.items(), key=lambda x: -x[1])}
 
 
