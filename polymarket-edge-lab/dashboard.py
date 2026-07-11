@@ -66,13 +66,19 @@ def gather():
     half = len(rows) // 2
     holdout = rows[half:]
 
-    # paper-trading what-if (must select the exact same band markets as the analyzer)
+    # paper-trading what-if (must select the exact same band markets as the analyzer).
+    # On drift, degrade the Paper tab only -- an illustrative simulation must never
+    # take down the real research page.
     trades = paper_trades(conn)
     n_band_analyze = sum(1 for r in rows if lo <= r[1] < hi)
+    paper_error = None
     if len(trades) != n_band_analyze:
-        raise ValueError(f"paper_trades drift: {len(trades)} trades vs "
-                         f"{n_band_analyze} analyzer band markets")
-    paper = simulate_paper(trades, first_ts, now) if first_ts else None
+        paper_error = (f"paper_trades drift: {len(trades)} trades vs "
+                       f"{n_band_analyze} analyzer band markets")
+        print(f"WARNING: {paper_error}", file=sys.stderr)
+        paper = None
+    else:
+        paper = simulate_paper(trades, first_ts, now) if first_ts else None
 
     market_rows = collect_market_rows(conn)
     health = pipeline_health(conn, first_ts, last_ts, now) if first_ts else None
@@ -86,6 +92,7 @@ def gather():
         band_markets=band_markets, usable=len(rows),
         health=health, funnel=funnel, traj=traj,
         rows=rows, holdout=holdout, market_rows=market_rows, paper=paper,
+        paper_error=paper_error,
         # progress = USABLE markets (resolved + valid T-24h snapshot), matching the
         # analyzer's n>=MIN_RESOLVED_MARKETS gate -- raw resolved overstates it
         pct_sample=min(100.0, 100.0 * len(rows) / config.MIN_RESOLVED_MARKETS),
@@ -161,18 +168,6 @@ def longshot_edge(rows):
 
 
 # --------------------------------------------------------------------- health / trajectory
-def _tail_log(name, keep=400):
-    """Last lines of a job log: (last_line, error_count, last_error_lines, mtime)."""
-    path = os.path.join(HERE, name)
-    if not os.path.exists(path):
-        return None, 0, [], None
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        lines = [ln.rstrip() for ln in f.readlines()[-keep:] if ln.strip()]
-    errors = [ln for ln in lines if "error" in ln.lower()]
-    last = lines[-1] if lines else None
-    return last, len(errors), errors[-3:], os.path.getmtime(path)
-
-
 def pipeline_health(conn, first_ts, last_ts, now):
     """Live pipeline diagnostics: snapshot coverage, gaps, logs, resolver queue."""
     hours = [r[0] for r in conn.execute(
@@ -197,15 +192,12 @@ def pipeline_health(conn, first_ts, last_ts, now):
         if oldest:
             oldest_pending_h = (now - oldest) / 3600
 
-    log_logger = _tail_log("logger.log")
-    log_resolve = _tail_log("resolve.log")
     db_bytes = os.path.getsize(DB_ABS) if os.path.exists(DB_ABS) else 0
     wal = conn.execute("PRAGMA journal_mode").fetchone()[0]
     return dict(
         hour_buckets=len(hours), hours_expected=expected,
         hours_lost=max(0, expected - len(hours)), gaps=gaps[-8:],
         per_run=per_run, pending=len(pending), oldest_pending_h=oldest_pending_h,
-        log_logger=log_logger, log_resolve=log_resolve,
         db_bytes=db_bytes, wal=wal,
         snap_age_h=(now - last_ts) / 3600 if last_ts else None,
     )
@@ -486,7 +478,7 @@ def sparkline(hist, w=560, h=104):
     lx, ly = X(pts[-1][0]), Y(pts[-1][1])
     return (f'<svg class="spark {cls}" viewBox="0 0 {w} {h}" role="img">{grid}'
             f'<polygon points="{area}" class="fill"/>'
-            f'<polyline points="{line}" class="ln"/>'
+            f'<polyline points="{line}" class="ln" pathLength="1"/>'
             f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="3.5" class="dot"/></svg>')
 
 
@@ -651,7 +643,7 @@ def pnl_chart(paper):
     svg = (f'<svg class="pnl {cls}" id="pnl-svg" viewBox="0 0 {W} {H}" role="img" '
            f'aria-label="Paper bankroll over time">{grid}'
            f'<polygon points="{area}" class="fill"/>'
-           f'<polyline points="{line}" class="ln"/>'
+           f'<polyline points="{line}" class="ln" pathLength="1"/>'
            f'<line id="pnl-xh" class="xh" x1="0" y1="{T}" x2="0" y2="{H - B}" '
            f'visibility="hidden"/>{dots}{endlbl}</svg>')
 
@@ -686,6 +678,13 @@ def paper_tab(d):
         'T−24h snapshot, settle at event time, frozen cost model applied. It is an '
         'illustration of scale, <b>not</b> part of the pre-registered test and <b>not</b> evidence '
         'the edge is real — only the holdout verdict at n≥200 decides that.</p></div></div>')
+
+    if d.get("paper_error"):
+        return (head + '<div class="alert"><h3>Simulation unavailable this render</h3>'
+                '<p style="margin:0">The paper-trade selection no longer matches the real '
+                f'analyzer\'s band selection (<code>{_html.escape(d["paper_error"])}</code>), '
+                'so the simulation is withheld rather than shown wrong. The pre-registered '
+                'test on the other tabs is unaffected.</p></div>')
 
     if p is None:
         return head + '<div class="panel">No snapshots yet — the simulation starts with data collection.</div>'
@@ -844,18 +843,19 @@ def fmt_bytes(b):
     return f"{b / 1e6:.1f} MB" if b >= 1e5 else f"{b / 1e3:.0f} kB"
 
 
-def _log_panel(title, tail, expect_note):
-    last, n_err, err_lines, mtime = tail
-    age = ((datetime.now(timezone.utc).timestamp() - mtime) / 3600) if mtime else None
-    rows = f'<div><span>Last entry</span><code>{_html.escape(last or "—")}</code></div>'
-    rows += (f'<div><span>Log file age</span>{age:.1f}h</div>' if age is not None else "")
-    rows += f'<div><span>Error lines (last 400)</span>{n_err}</div>'
-    if err_lines:
-        errs = "<br>".join(f"<code>{_html.escape(e)}</code>" for e in err_lines)
-        rows += f'<div style="grid-column:1/-1"><span>Most recent errors</span>{errs}</div>'
-    return (f'<div class="panel" style="margin-top:14px"><h4 style="margin-top:0">{title}</h4>'
-            f'<div class="mstats" style="margin-top:8px">{rows}</div>'
-            f'<p style="color:var(--mut);font-size:12.5px;margin-bottom:0">{expect_note}</p></div>')
+JOBS_PANEL = (
+    '<div class="panel" style="margin-top:14px"><h4 style="margin-top:0">Job logs — GitHub '
+    'Actions</h4><p style="color:var(--mut)">The pipeline runs as one hourly workflow '
+    '(<code>.github/workflows/update.yml</code>, cron :17): logger → resolver → dashboard → '
+    'commit → watchdog. Per-run stdout lives in the repository\'s <b>Actions</b> tab, not in '
+    'local log files. Healthy = one “scanned_liquid … snapshots_written” line (logger) and one '
+    '“pending_checked … newly_resolved” line (resolver) per run; <code>newly_resolved=0</code> '
+    'is normal when no tracked game has finished since the last run. Transient network errors '
+    'are retried ×3 before a run gives up, and GitHub emails on any failed run.</p>'
+    '<p style="color:var(--mut);font-size:12.5px;margin-bottom:0"><b>Dead-man\'s switch:</b> '
+    'the final <code>watchdog.py</code> step fails the run — triggering the failure email — '
+    'if the newest snapshot is &gt;6h old or resolved markets stop getting labeled, catching '
+    'the silent case where every job exits 0 but no fresh data lands.</p></div>')
 
 
 def health_tab(d):
@@ -868,7 +868,7 @@ def health_tab(d):
                  if h["oldest_pending_h"] else "queue empty")
     cards = "".join([
         stat("Newest snapshot", f'<span class="{age_cls}">{h["snap_age_h"]:.1f}h ago</span>',
-             "logger runs hourly at :08"),
+             "pipeline runs hourly at :17 (GitHub Actions)"),
         stat("Hourly coverage", f'{cov:.0f}%',
              f'{h["hour_buckets"]}/{h["hours_expected"]} hours · {h["hours_lost"]} lost'),
         stat("Snapshots / run", f'{h["per_run"][1]:.0f}',
@@ -887,10 +887,11 @@ def health_tab(d):
     gaps_panel = (
         '<div class="panel" style="margin-top:14px"><h4 style="margin-top:0">Snapshot gaps</h4>'
         + gaps +
-        '<p style="color:var(--mut);font-size:12.5px;margin-bottom:0">Known causes of gaps: the '
-        'machine asleep at task time (Task Scheduler fires a catch-up run on wake), transient '
-        'DNS/network failures (now retried ×3 with backoff), and one historical '
-        '<code>database is locked</code> collision (fixed 2026-07-03 with WAL + busy_timeout). '
+        '<p style="color:var(--mut);font-size:12.5px;margin-bottom:0">Known causes of gaps: '
+        'GitHub Actions cron is best-effort and can skip or delay under load, transient '
+        'DNS/network failures (retried ×3 with backoff), plus two historical local-machine-era '
+        'causes (sleep at task time; one <code>database is locked</code> collision, fixed '
+        '2026-07-03 with WAL + busy_timeout). '
         'Each missing hour slightly thins the usable sample but does not bias it — outages are '
         'independent of match outcomes.</p></div>')
 
@@ -928,30 +929,27 @@ def health_tab(d):
     update_panel = (
         '<div class="panel" style="margin-top:14px"><h4 style="margin-top:0">How this page keeps '
         'itself up to date</h4><ul class="clean" style="color:var(--mut)">'
-        '<li><b>Data:</b> logger (hourly :08) and resolver (hourly :12) refresh '
-        '<code>edge_lab.sqlite</code>; every number on every tab is recomputed from that file '
-        'when the dashboard regenerates (hourly :18).</li>'
-        '<li><b>Page:</b> auto-reloads every 15 minutes (<code>meta refresh</code>), so the '
-        'browser tab never shows a render older than ~75 minutes.</li>'
+        '<li><b>Data:</b> a GitHub Actions workflow (hourly at :17) runs logger → resolver → '
+        'dashboard against <code>edge_lab.sqlite</code>, then commits the refreshed database '
+        'and this page back to the repo; every number on every tab is recomputed each run.</li>'
+        '<li><b>Page:</b> served from <code>docs/</code> by GitHub Pages and auto-reloads every '
+        '15 minutes (<code>meta refresh</code>), so the browser tab stays within ~75 minutes '
+        'of the newest render.</li>'
         '<li><b>Self-diagnosis:</b> the "Updated" badge in the header turns red if the page it '
-        'is showing was generated &gt;2h ago — that means the Dashboard task itself died.</li>'
-        '<li><b>Dead-man\'s switch:</b> <code>watchdog.py</code> (daily 10:00) pops a Windows '
-        'alert if snapshots are &gt;6h stale or the resolver has not run for &gt;3h.</li>'
+        'is showing was generated &gt;2h ago — that means the workflow stopped producing '
+        'renders.</li>'
+        '<li><b>Dead-man\'s switch:</b> the workflow\'s final <code>watchdog.py</code> step '
+        'fails the run (GitHub emails on failure) if snapshots are &gt;6h stale or outcomes '
+        'stop getting labeled, even when every job exits cleanly.</li>'
         '</ul></div>')
 
     return ('<div class="section"><h2>Pipeline health — live</h2>'
             '<p style="color:var(--mut);margin:-4px 0 14px;max-width:820px">Everything below is '
-            'recomputed from the database and the job logs each time this page regenerates. '
+            'recomputed from the database each time this page regenerates. '
             'Green = the experiment is collecting cleanly; anything red deserves a look at the '
-            'named log file.</p>'
+            'workflow logs in the repo\'s Actions tab.</p>'
             f'<div class="grid">{cards}</div>{gaps_panel}'
-            + _log_panel("logger.log — snapshot collection", h["log_logger"],
-                         "Healthy = one “scanned_liquid … snapshots_written” line per hour. "
-                         "Transient network errors are retried ×3 before a run gives up.")
-            + _log_panel("resolve.log — outcome labeling", h["log_resolve"],
-                         "Healthy = one “pending_checked … newly_resolved” line per hour. "
-                         "newly_resolved=0 is normal when no tracked game has finished since "
-                         "the last run.")
+            + JOBS_PANEL
             + funnel_panel + update_panel + '</div>')
 
 
@@ -963,7 +961,19 @@ trail: what was changed, what was found, and what was decided — each entry dat
 these notes refer to are always current on the Overview and Health tabs; full detail lives in
 <code>REVIEW-2026-07-03.md</code> in the project folder.</p>
 
-<div class="panel"><h4 style="margin-top:0">2026-07-03 — Pipeline hardening (maintenance, frozen
+<div class="panel"><h4 style="margin-top:0">2026-07-11 — Observability catch-up after the GitHub
+Actions migration (maintenance, frozen parameters untouched)</h4>
+<p style="color:var(--mut)">A code review found the monitoring/self-documentation layer still
+described the retired Windows Task Scheduler deployment. Fixes: <code>watchdog.py</code> now
+actually exists and runs as the workflow's final step (fails the run — and triggers GitHub's
+failure email — if snapshots are &gt;6h stale or outcomes stop being labeled); the Health tab,
+footer and timeline now describe the real hourly Actions pipeline instead of local task names
+and log files; the paper-tab consistency check degrades that tab instead of aborting the whole
+page; the workflow's <code>git push</code> retries ×4 with backoff so a transient failure cannot
+silently drop an hour of snapshots. None of this touches the frozen test, the market selection,
+the snapshot semantics or the analysis.</p></div>
+
+<div class="panel" style="margin-top:16px"><h4 style="margin-top:0">2026-07-03 — Pipeline hardening (maintenance, frozen
 parameters untouched)</h4>
 <p style="color:var(--mut)">A code review found three data-loss failure modes already visible in
 the logs. Fixes, all verified with a selftest + live smoke runs (backup of pre-change code and DB
@@ -1199,6 +1209,98 @@ box-shadow:0 8px 24px rgba(0,0,0,.45)}
 .pnltip .tq{color:var(--mut);margin-top:2px}
 .pnltip .tw{color:var(--mut);font-size:11.5px;margin-top:2px}
 .ptable td{font-variant-numeric:tabular-nums}
+
+/* =============== mobile (iPhone-class) & motion polish — presentation only =============== */
+:root{--pad:22px}
+body{-webkit-text-size-adjust:100%}
+a,button,.tab{-webkit-tap-highlight-color:transparent}
+.wrap{padding:28px max(var(--pad),env(safe-area-inset-right)) 80px
+  max(var(--pad),env(safe-area-inset-left))}
+#mkt-filter{font-size:16px}   /* ≥16px stops iOS Safari zooming the page on focus */
+.mkt{content-visibility:auto;contain-intrinsic-size:auto 48px} /* keeps the 2.7k-row list smooth */
+
+/* sticky, swipeable tab bar with a frosted backdrop */
+.tabs{position:sticky;top:0;z-index:30;overflow-x:auto;overscroll-behavior-x:contain;
+scrollbar-width:none;background:rgba(11,15,26,.82);
+backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:0 0 auto}
+
+/* gentle interactivity (hover states only where a real pointer exists) */
+.card,.morebtn,.tab,.mkt-row{transition:transform .25s ease,border-color .25s ease,
+box-shadow .25s ease,background .25s ease,color .25s ease}
+@media(hover:hover){
+.card:hover{transform:translateY(-3px);border-color:rgba(91,140,255,.5);
+box-shadow:0 10px 28px rgba(0,0,0,.35)}
+.mkt-row:hover{background:rgba(91,140,255,.05)}
+}
+.morebtn:active{transform:scale(.95)}
+.tab:active{transform:scale(.97)}
+
+/* motion: every animation (and every animated-from-hidden initial state) lives inside
+   this media query, so reduced-motion users get a fully static, fully visible page */
+@media (prefers-reduced-motion: no-preference){
+html{scroll-behavior:smooth}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes fadeIn{from{opacity:0}}
+@keyframes barGrow{from{width:0}}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes drift{from{transform:translate3d(-3%,-2%,0) scale(1)}
+to{transform:translate3d(3%,2%,0) scale(1.06)}}
+@keyframes livePulse{0%,100%{box-shadow:0 0 0 0 rgba(55,211,154,.30)}
+55%{box-shadow:0 0 0 7px rgba(55,211,154,0)}}
+header.hero{position:relative;overflow:hidden;animation:fadeUp .55s ease both}
+header.hero::after{content:"";position:absolute;inset:-45%;pointer-events:none;
+background:radial-gradient(640px 320px at 72% 18%,rgba(155,123,255,.13),transparent 65%);
+animation:drift 16s ease-in-out infinite alternate}
+.b-live{animation:livePulse 2.6s ease-out infinite}
+.tabpanel.active{animation:fadeUp .35s ease both}
+.fill,.m-chance .cbar i{animation:barGrow 1s cubic-bezier(.22,1,.36,1) both}
+.spark .ln,.pnl .ln{stroke-dasharray:1;stroke-dashoffset:1;
+animation:draw 1.1s ease .15s forwards}
+.spark .fill,.pnl .fill{animation:fadeIn .9s ease .5s both}
+.mkt-detail-in{animation:fadeUp .32s ease both}
+details[open] summary ~ *{animation:fadeUp .3s ease both}
+/* reveal-on-scroll: initial hidden state requires JS (html.js) so no-JS stays visible */
+.js .section{opacity:0;transform:translateY(16px);
+transition:opacity .6s cubic-bezier(.22,1,.36,1),transform .6s cubic-bezier(.22,1,.36,1)}
+.js .section.vis{opacity:1;transform:none}
+.js .section.vis .grid .card{animation:fadeUp .45s ease both}
+.js .section.vis .grid .card:nth-child(2){animation-delay:.06s}
+.js .section.vis .grid .card:nth-child(3){animation-delay:.12s}
+.js .section.vis .grid .card:nth-child(4){animation-delay:.18s}
+.js .section.vis .grid .card:nth-child(5){animation-delay:.24s}
+.js .section.vis .grid .card:nth-child(6){animation-delay:.3s}
+}
+
+/* wide content scrolls inside its own container instead of squeezing */
+@media(max-width:760px){
+table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+.pnlwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.pnl{min-width:640px}
+#tab-worldcup .panel{overflow-x:auto;-webkit-overflow-scrolling:touch}
+#tab-worldcup .panel svg{min-width:600px}
+}
+
+/* iPhone-width layout */
+@media(max-width:500px){
+:root{--pad:14px}
+.wrap{padding-top:16px;padding-bottom:60px}
+header.hero{padding:22px 18px 20px;border-radius:14px}
+.hero h1{font-size:22px}
+.hero p{font-size:14px}
+.badges{gap:8px}
+.grid{grid-template-columns:repeat(2,1fr);gap:10px}
+.card{padding:12px 13px;border-radius:12px}
+.card .val{font-size:20px}
+.panel{padding:16px 15px;border-radius:14px}
+.section h2{font-size:13px;letter-spacing:1.1px}
+th,td{padding:7px 8px;font-size:12.5px}
+.tabs{gap:4px;margin-top:18px}
+.tab{padding:10px 13px;font-size:13px}
+.morebtn{padding:8px 12px}
+.mstats{grid-template-columns:repeat(2,1fr)}
+}
 """
 
 
@@ -1214,9 +1316,10 @@ def timeline(d):
          "Causal mechanism, falsifiable hypothesis, buckets, snapshot horizon, liquidity filter and "
          "cost model locked in <code>config.py</code> before any resolved-outcome data existed."),
         ("done", "Steps 2–4 — Build &amp; schedule", "LIVE",
-         "Logger, resolver and analyzer built and tested against the live Gamma API. Windows Task "
-         "Scheduler runs the logger, resolver and dashboard hourly (:08/:12/:18); pipeline "
-         "hardened 2026-07-03 (WAL, retries — see Lab notes)."),
+         "Logger, resolver and analyzer built and tested against the live Gamma API. A GitHub "
+         "Actions workflow runs the logger, resolver and dashboard hourly (:17) and publishes "
+         "this page via GitHub Pages; pipeline hardened 2026-07-03 (WAL, retries — see Lab "
+         "notes)."),
         ("now", "Step 5 — Collect &amp; validate", "IN PROGRESS",
          f"Accumulating snapshots and resolutions for 6–8 weeks. {collecting}. The pre-registered "
          "read-out is the out-of-sample holdout, net of costs."),
@@ -1366,6 +1469,20 @@ infrastructure with capped tuition, not a profit centre.</p></details>
 
 SCRIPT = """<script>
 (function(){
+  // gate the reveal-on-scroll initial-hidden state on JS actually running
+  document.documentElement.classList.add('js');
+  var sections = document.querySelectorAll('.section');
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if (en.isIntersecting) { en.target.classList.add('vis'); io.unobserve(en.target); }
+      });
+    }, {rootMargin: '0px 0px -6% 0px'});
+    sections.forEach(function(s){ io.observe(s); });
+  } else {
+    sections.forEach(function(s){ s.classList.add('vis'); });
+  }
+
   function showTab(name){
     document.querySelectorAll('.tabpanel').forEach(function(p){
       p.classList.toggle('active', p.id === 'tab-' + name);
@@ -1380,7 +1497,12 @@ SCRIPT = """<script>
     return valid.indexOf(h) !== -1 ? h : 'overview';
   }
   showTab(fromHash());
-  window.addEventListener('hashchange', function(){ showTab(fromHash()); });
+  window.addEventListener('hashchange', function(){
+    showTab(fromHash());
+    // a long page scrolled deep would otherwise open the next tab mid-nowhere
+    var rm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({top: 0, behavior: rm ? 'auto' : 'smooth'});
+  });
 
   var box = document.getElementById('mkt-filter');
   var count = document.getElementById('mkt-count');
@@ -1413,7 +1535,7 @@ SCRIPT = """<script>
     if (ageH > 2) {
       gb.classList.remove('b-mut'); gb.classList.add('b-blk');
       gb.textContent = 'STALE — page generated ' + ageH.toFixed(1) +
-        'h ago; check the PolymarketEdgeLab-Dashboard task';
+        'h ago; check the edge-lab update workflow (Actions tab)';
     }
   }
 
@@ -1482,8 +1604,8 @@ def worldcup_tab():
             frag = f.read()
         age_h = (datetime.now(timezone.utc).timestamp()
                  - os.path.getmtime(WC_TAB_PATH)) / 3600
-        stale = (' · <span style="color:var(--warn)">STALE — check the '
-                 'WorldCup2026-Predict task</span>' if age_h > 26 else "")
+        stale = (' · <span style="color:var(--warn)">STALE — check the edge-lab update '
+                 'workflow\'s daily predict slot</span>' if age_h > 26 else "")
         return (f'<p style="color:var(--mut);font-size:12.5px">Updated {age_h:.1f}h ago '
                 f'by the daily worldcup-2026 pipeline{stale}</p>{frag}')
     except Exception as exc:  # noqa: BLE001
@@ -1519,7 +1641,8 @@ def build_html(d):
         f'of ~{TARGET_WINDOW_DAYS} {bar(d["pct_time"], "time")}</div></div>')
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0f1a">
 <meta http-equiv="refresh" content="900">
 <title>Polymarket Edge Lab</title><style>{CSS}</style></head><body><div class="wrap">
 <header class="hero">
@@ -1594,9 +1717,9 @@ tracks</b>; full verdict on the <a href="#notes">Lab notes</a> tab.</p></div>
 <div id="tab-worldcup" class="tabpanel">{worldcup_tab()}</div>
 
 <div class="foot">
-Files: <code>C:\\Users\\macpo\\edge\\polymarket-edge-lab\\</code> · Data: <code>edge_lab.sqlite</code> ·
-Scheduled: <code>PolymarketEdgeLab-Logger</code> (hourly :08), <code>PolymarketEdgeLab-Resolve</code>
-(hourly :12), <code>PolymarketEdgeLab-Dashboard</code> (hourly :18). Source: Polymarket Gamma API (public,
+Files: <code>polymarket-edge-lab/</code> in the edge-lab repo · Data: <code>edge_lab.sqlite</code> ·
+Scheduled: GitHub Actions workflow <code>edge-lab update</code> (hourly :17 — logger → resolver →
+dashboard → watchdog), published via GitHub Pages. Source: Polymarket Gamma API (public,
 read-only). This is research &amp; general information, not financial, tax or legal advice.
 </div>
 </div>

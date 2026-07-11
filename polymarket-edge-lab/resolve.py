@@ -3,7 +3,7 @@
 For markets whose end date has passed but whose outcome is still unknown, fetch the
 market by id from Gamma and, if it has resolved, record the YES/NO outcome. This turns
 the snapshot time series into a labeled dataset for the calibration test. Run hourly
-(scheduled at :12; the watchdog alerts if this log goes stale for more than 3h).
+(the workflow's watchdog step alerts if outcomes stop being labeled).
 
     python resolve.py
 """

@@ -70,6 +70,22 @@ jobs:
             echo "nothing changed this run"
           else
             git commit -m "auto: refresh $(date -u +%FT%TZ)"
-            git pull --rebase --autostash
-            git push
+            # push with retry: a single transient failure here would silently
+            # drop this hour's snapshots (next run starts from the last commit)
+            for i in 1 2 3 4; do
+              git pull --rebase --autostash
+              if git push; then
+                break
+              elif [ "$i" = 4 ]; then
+                echo "push failed after 4 attempts" >&2
+                exit 1
+              fi
+              sleep $((2 ** i))
+            done
           fi
+
+      - name: watchdog (dead-man's switch)
+        working-directory: ./polymarket-edge-lab
+        # last step, after the commit, so a stale-data failure still persists state;
+        # exits non-zero when data is stale despite green runs -> GitHub failure email
+        run: python watchdog.py

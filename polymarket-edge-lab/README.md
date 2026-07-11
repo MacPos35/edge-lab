@@ -101,6 +101,8 @@ plus `config.GAS_USD` per trade. Only ONE category and ONE bucketing are tested 
 | `logger.py`  | Read-only Gamma-API poller → snapshots (run hourly) |
 | `resolve.py` | Backfills YES/NO outcomes for resolved markets (run hourly) |
 | `analyze.py` | Out-of-sample calibration / bucket test (`--selftest` for a synthetic check) |
+| `dashboard.py` | Renders the published HTML dashboard from the live DB (run hourly) |
+| `watchdog.py` | Dead-man's switch: fails the CI run when data goes stale despite green jobs |
 | `requirements.txt` | `requests` (stdlib `sqlite3`, `math`, `statistics` otherwise) |
 
 ## Usage
@@ -112,11 +114,14 @@ python analyze.py --selftest  # verify the math on synthetic injected-bias data
 python analyze.py           # after 6–8 weeks: read out the pre-registered test
 ```
 
-Schedule `logger.py` (hourly :08), `resolve.py` (hourly :12) and `dashboard.py` (hourly :18) with
-Windows Task Scheduler (`schtasks`) — resolve before dashboard, so each render has fresh outcomes.
-Register task actions as `wscript.exe //B run_hidden.vbs "cmd /c <python> <script>.py >> <script>.log 2>&1"`
-(not `cmd.exe` directly) — interactive tasks that execute `cmd.exe` flash a visible console window on every run.
-**The 6–8-week data-collection clock is the binding constraint — start the logger early.**
+Scheduling is handled by `../.github/workflows/update.yml`: one GitHub Actions job, hourly at
+:17, runs `logger.py → resolve.py → dashboard.py → watchdog.py` (resolve before dashboard, so
+each render has fresh outcomes) and commits the refreshed sqlite + published page back to the
+repo. `watchdog.py` is the dead-man's switch — it fails the run (GitHub emails on failure) if
+the newest snapshot is >6h old or outcomes stop being labeled, catching silent-green failures.
+(The original deployment ran the same scripts from Windows Task Scheduler; that era's notes
+live in the dashboard's Lab-notes tab.)
+**The 6–8-week data-collection clock is the binding constraint — keep the workflow running.**
 
 > Note: Gamma caps deep pagination (HTTP 422 past offset ~2–3k), so each run captures the
 > **top ~2,100 markets by liquidity** and the category subset within them (~340 sports markets,
