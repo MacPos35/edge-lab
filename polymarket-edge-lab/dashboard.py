@@ -478,7 +478,7 @@ def sparkline(hist, w=560, h=104):
     lx, ly = X(pts[-1][0]), Y(pts[-1][1])
     return (f'<svg class="spark {cls}" viewBox="0 0 {w} {h}" role="img">{grid}'
             f'<polygon points="{area}" class="fill"/>'
-            f'<polyline points="{line}" class="ln"/>'
+            f'<polyline points="{line}" class="ln" pathLength="1"/>'
             f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="3.5" class="dot"/></svg>')
 
 
@@ -643,7 +643,7 @@ def pnl_chart(paper):
     svg = (f'<svg class="pnl {cls}" id="pnl-svg" viewBox="0 0 {W} {H}" role="img" '
            f'aria-label="Paper bankroll over time">{grid}'
            f'<polygon points="{area}" class="fill"/>'
-           f'<polyline points="{line}" class="ln"/>'
+           f'<polyline points="{line}" class="ln" pathLength="1"/>'
            f'<line id="pnl-xh" class="xh" x1="0" y1="{T}" x2="0" y2="{H - B}" '
            f'visibility="hidden"/>{dots}{endlbl}</svg>')
 
@@ -945,9 +945,9 @@ def health_tab(d):
 
     return ('<div class="section"><h2>Pipeline health — live</h2>'
             '<p style="color:var(--mut);margin:-4px 0 14px;max-width:820px">Everything below is '
-            'recomputed from the database and the job logs each time this page regenerates. '
+            'recomputed from the database each time this page regenerates. '
             'Green = the experiment is collecting cleanly; anything red deserves a look at the '
-            'named log file.</p>'
+            'workflow logs in the repo\'s Actions tab.</p>'
             f'<div class="grid">{cards}</div>{gaps_panel}'
             + JOBS_PANEL
             + funnel_panel + update_panel + '</div>')
@@ -1209,6 +1209,98 @@ box-shadow:0 8px 24px rgba(0,0,0,.45)}
 .pnltip .tq{color:var(--mut);margin-top:2px}
 .pnltip .tw{color:var(--mut);font-size:11.5px;margin-top:2px}
 .ptable td{font-variant-numeric:tabular-nums}
+
+/* =============== mobile (iPhone-class) & motion polish — presentation only =============== */
+:root{--pad:22px}
+body{-webkit-text-size-adjust:100%}
+a,button,.tab{-webkit-tap-highlight-color:transparent}
+.wrap{padding:28px max(var(--pad),env(safe-area-inset-right)) 80px
+  max(var(--pad),env(safe-area-inset-left))}
+#mkt-filter{font-size:16px}   /* ≥16px stops iOS Safari zooming the page on focus */
+.mkt{content-visibility:auto;contain-intrinsic-size:auto 48px} /* keeps the 2.7k-row list smooth */
+
+/* sticky, swipeable tab bar with a frosted backdrop */
+.tabs{position:sticky;top:0;z-index:30;overflow-x:auto;overscroll-behavior-x:contain;
+scrollbar-width:none;background:rgba(11,15,26,.82);
+backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:0 0 auto}
+
+/* gentle interactivity (hover states only where a real pointer exists) */
+.card,.morebtn,.tab,.mkt-row{transition:transform .25s ease,border-color .25s ease,
+box-shadow .25s ease,background .25s ease,color .25s ease}
+@media(hover:hover){
+.card:hover{transform:translateY(-3px);border-color:rgba(91,140,255,.5);
+box-shadow:0 10px 28px rgba(0,0,0,.35)}
+.mkt-row:hover{background:rgba(91,140,255,.05)}
+}
+.morebtn:active{transform:scale(.95)}
+.tab:active{transform:scale(.97)}
+
+/* motion: every animation (and every animated-from-hidden initial state) lives inside
+   this media query, so reduced-motion users get a fully static, fully visible page */
+@media (prefers-reduced-motion: no-preference){
+html{scroll-behavior:smooth}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes fadeIn{from{opacity:0}}
+@keyframes barGrow{from{width:0}}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes drift{from{transform:translate3d(-3%,-2%,0) scale(1)}
+to{transform:translate3d(3%,2%,0) scale(1.06)}}
+@keyframes livePulse{0%,100%{box-shadow:0 0 0 0 rgba(55,211,154,.30)}
+55%{box-shadow:0 0 0 7px rgba(55,211,154,0)}}
+header.hero{position:relative;overflow:hidden;animation:fadeUp .55s ease both}
+header.hero::after{content:"";position:absolute;inset:-45%;pointer-events:none;
+background:radial-gradient(640px 320px at 72% 18%,rgba(155,123,255,.13),transparent 65%);
+animation:drift 16s ease-in-out infinite alternate}
+.b-live{animation:livePulse 2.6s ease-out infinite}
+.tabpanel.active{animation:fadeUp .35s ease both}
+.fill,.m-chance .cbar i{animation:barGrow 1s cubic-bezier(.22,1,.36,1) both}
+.spark .ln,.pnl .ln{stroke-dasharray:1;stroke-dashoffset:1;
+animation:draw 1.1s ease .15s forwards}
+.spark .fill,.pnl .fill{animation:fadeIn .9s ease .5s both}
+.mkt-detail-in{animation:fadeUp .32s ease both}
+details[open] summary ~ *{animation:fadeUp .3s ease both}
+/* reveal-on-scroll: initial hidden state requires JS (html.js) so no-JS stays visible */
+.js .section{opacity:0;transform:translateY(16px);
+transition:opacity .6s cubic-bezier(.22,1,.36,1),transform .6s cubic-bezier(.22,1,.36,1)}
+.js .section.vis{opacity:1;transform:none}
+.js .section.vis .grid .card{animation:fadeUp .45s ease both}
+.js .section.vis .grid .card:nth-child(2){animation-delay:.06s}
+.js .section.vis .grid .card:nth-child(3){animation-delay:.12s}
+.js .section.vis .grid .card:nth-child(4){animation-delay:.18s}
+.js .section.vis .grid .card:nth-child(5){animation-delay:.24s}
+.js .section.vis .grid .card:nth-child(6){animation-delay:.3s}
+}
+
+/* wide content scrolls inside its own container instead of squeezing */
+@media(max-width:760px){
+table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+.pnlwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.pnl{min-width:640px}
+#tab-worldcup .panel{overflow-x:auto;-webkit-overflow-scrolling:touch}
+#tab-worldcup .panel svg{min-width:600px}
+}
+
+/* iPhone-width layout */
+@media(max-width:500px){
+:root{--pad:14px}
+.wrap{padding-top:16px;padding-bottom:60px}
+header.hero{padding:22px 18px 20px;border-radius:14px}
+.hero h1{font-size:22px}
+.hero p{font-size:14px}
+.badges{gap:8px}
+.grid{grid-template-columns:repeat(2,1fr);gap:10px}
+.card{padding:12px 13px;border-radius:12px}
+.card .val{font-size:20px}
+.panel{padding:16px 15px;border-radius:14px}
+.section h2{font-size:13px;letter-spacing:1.1px}
+th,td{padding:7px 8px;font-size:12.5px}
+.tabs{gap:4px;margin-top:18px}
+.tab{padding:10px 13px;font-size:13px}
+.morebtn{padding:8px 12px}
+.mstats{grid-template-columns:repeat(2,1fr)}
+}
 """
 
 
@@ -1377,6 +1469,20 @@ infrastructure with capped tuition, not a profit centre.</p></details>
 
 SCRIPT = """<script>
 (function(){
+  // gate the reveal-on-scroll initial-hidden state on JS actually running
+  document.documentElement.classList.add('js');
+  var sections = document.querySelectorAll('.section');
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if (en.isIntersecting) { en.target.classList.add('vis'); io.unobserve(en.target); }
+      });
+    }, {rootMargin: '0px 0px -6% 0px'});
+    sections.forEach(function(s){ io.observe(s); });
+  } else {
+    sections.forEach(function(s){ s.classList.add('vis'); });
+  }
+
   function showTab(name){
     document.querySelectorAll('.tabpanel').forEach(function(p){
       p.classList.toggle('active', p.id === 'tab-' + name);
@@ -1391,7 +1497,12 @@ SCRIPT = """<script>
     return valid.indexOf(h) !== -1 ? h : 'overview';
   }
   showTab(fromHash());
-  window.addEventListener('hashchange', function(){ showTab(fromHash()); });
+  window.addEventListener('hashchange', function(){
+    showTab(fromHash());
+    // a long page scrolled deep would otherwise open the next tab mid-nowhere
+    var rm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({top: 0, behavior: rm ? 'auto' : 'smooth'});
+  });
 
   var box = document.getElementById('mkt-filter');
   var count = document.getElementById('mkt-count');
@@ -1530,7 +1641,8 @@ def build_html(d):
         f'of ~{TARGET_WINDOW_DAYS} {bar(d["pct_time"], "time")}</div></div>')
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0f1a">
 <meta http-equiv="refresh" content="900">
 <title>Polymarket Edge Lab</title><style>{CSS}</style></head><body><div class="wrap">
 <header class="hero">
