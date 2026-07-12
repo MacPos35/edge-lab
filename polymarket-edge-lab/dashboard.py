@@ -1330,8 +1330,6 @@ transition:opacity .6s cubic-bezier(.22,1,.36,1),transform .6s cubic-bezier(.22,
 table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
 .pnlwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 .pnl{min-width:640px}
-#tab-worldcup .panel{overflow-x:auto;-webkit-overflow-scrolling:touch}
-#tab-worldcup .panel svg{min-width:600px}
 }
 
 /* iPhone-width layout: tabs become a fixed bottom bar */
@@ -1551,7 +1549,7 @@ SCRIPT = """<script>
   }
   function fromHash(){
     var h = (location.hash || '').replace('#','');
-    var valid = ['overview', 'markets', 'paper', 'health', 'notes', 'worldcup'];
+    var valid = ['overview', 'markets', 'paper', 'health', 'notes'];
     return valid.indexOf(h) !== -1 ? h : 'overview';
   }
   showTab(fromHash());
@@ -1649,29 +1647,6 @@ SCRIPT = """<script>
 </script>"""
 
 
-# --------------------------------------------------------------------- world cup tab
-WC_TAB_PATH = os.path.join(HERE, "..", "worldcup-2026", "wc_tab.html")
-
-
-def worldcup_tab():
-    """Presentation-only include of the sibling worldcup-2026 project's pre-rendered
-    fragment. Any failure degrades to a fallback panel; deliberately NOT called from
-    gather() so it can never touch the frozen experiment's data path."""
-    try:
-        with open(WC_TAB_PATH, encoding="utf-8") as f:
-            frag = f.read()
-        age_h = (datetime.now(timezone.utc).timestamp()
-                 - os.path.getmtime(WC_TAB_PATH)) / 3600
-        stale = (' · <span style="color:var(--warn)">STALE — check the edge-lab update '
-                 'workflow\'s daily predict slot</span>' if age_h > 26 else "")
-        return (f'<p style="color:var(--mut);font-size:12.5px">Updated {age_h:.1f}h ago '
-                f'by the daily worldcup-2026 pipeline{stale}</p>{frag}')
-    except Exception as exc:  # noqa: BLE001
-        return ('<div class="panel">World Cup pipeline output not available '
-                f'({_html.escape(str(exc))}) — expected at '
-                f'<code>{_html.escape(WC_TAB_PATH)}</code></div>')
-
-
 def build_html(d):
     gen_ts = datetime.now(timezone.utc).timestamp()
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -1747,7 +1722,6 @@ def build_html(d):
   <a class="tab" href="#paper" data-tab="paper">Paper P&amp;L</a>
   <a class="tab" href="#health" data-tab="health">Health</a>
   <a class="tab" href="#notes" data-tab="notes">Lab notes</a>
-  <a class="tab" href="#worldcup" data-tab="worldcup">World Cup</a>
 </nav>
 
 <div id="tab-overview" class="tabpanel active">
@@ -1797,8 +1771,6 @@ tracks</b>; full verdict on the <a href="#notes">Lab notes</a> tab.</p></div>
 <div id="tab-health" class="tabpanel">{health_tab(d)}</div>
 
 <div id="tab-notes" class="tabpanel">{NOTES}</div>
-
-<div id="tab-worldcup" class="tabpanel">{worldcup_tab()}</div>
 
 <div class="foot">
 Files: <code>polymarket-edge-lab/</code> in the edge-lab repo · Data: <code>edge_lab.sqlite</code> ·

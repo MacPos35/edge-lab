@@ -1,8 +1,8 @@
 name: edge-lab update
 
-# Keeps the Polymarket edge-lab dashboard + embedded World Cup tab up to date with
-# zero input. Runs hourly on GitHub's managed runners (free), commits refreshed state
-# back to the repo, and publishes the dashboard to GitHub Pages (main branch /docs).
+# Keeps the Polymarket edge-lab dashboard up to date with zero input. Runs hourly
+# on GitHub's managed runners (free), commits refreshed state back to the repo, and
+# publishes the dashboard to GitHub Pages (main branch /docs).
 #
 # Why the details matter:
 #  - working-directory is load-bearing: logger.py/resolve.py open the sqlite CWD-relative
@@ -10,8 +10,6 @@ name: edge-lab update
 #    (DB_ABS). They only hit the SAME file when CWD == polymarket-edge-lab/.
 #  - db.py runs the sqlite in WAL mode, so writes may sit in a -wal sidecar. We checkpoint
 #    (TRUNCATE) before committing so the single committed .sqlite is self-contained.
-#  - predict.py is a once/day job; we run it only in one hourly slot (the dashboard's
-#    staleness banner tolerates up to 26h).
 #  - the self-commit each run also resets GitHub's 60-day inactivity timer, so the
 #    schedule never auto-disables.
 
@@ -42,15 +40,6 @@ jobs:
         run: |
           python logger.py
           python resolve.py
-
-      - name: worldcup predict (daily slot only)
-        working-directory: ./worldcup-2026
-        run: |
-          if [ "$(date -u +%H)" = "04" ]; then
-            python predict.py
-          else
-            echo "not the daily predict slot (UTC hour $(date -u +%H)) - skipping"
-          fi
 
       - name: regenerate dashboard into docs/
         working-directory: ./polymarket-edge-lab
