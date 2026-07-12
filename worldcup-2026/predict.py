@@ -48,6 +48,15 @@ ET_FRACTION = 1.0 / 3.0 # extra time = 30 min of a 90-min match
 PENALTY_P = 0.50        # penalty shootouts are a coin flip
 N_SIMS = 10_000
 
+# Council variant (2026-07-12 review, see COUNCIL-2026-07-12.md): after 10 graded
+# knockout matches the w=0 sanity variant beat the blend (Brier 0.155 vs 0.198) and
+# the leakage-free backtest (backtest.py) points the same way on 92 matches of 90'
+# W/D/L log loss — more shrinkage, sharper Elo scale. Not significant (paired t≈1),
+# so the headline model stays frozen; this variant is tracked alongside w0/w1 and
+# graded out-of-sample on the remaining matches. Never the headline.
+CV_SHRINK_K = 15
+CV_ELO_SCALE = 600.0
+
 # Host team -> ESPN venue country string
 HOSTS = {"United States": "USA", "Mexico": "Mexico", "Canada": "Canada"}
 
@@ -337,6 +346,8 @@ def issue_and_grade(state, matches, factors):
                 p_adv_w0=predict_match(h, a, m["venue_country"], None)["p_adv"],
                 p_adv_w1=predict_match(h, a, m["venue_country"],
                                        _extreme_factors(factors))["p_adv"],
+                # council variant (2026-07-12): K=15, Elo scale 600
+                p_adv_cv=_council_p_adv(h, a, m["venue_country"], matches),
             )
             state["issued"][m["id"]] = pred
             log(f"issued {m['stage']} {h} v {a}: adv {pred['p_adv']:.0%}")
@@ -353,8 +364,22 @@ def issue_and_grade(state, matches, factors):
             brier_w0=round((pred["p_adv_w0"] - (1.0 if home_adv else 0.0)) ** 2, 4),
             brier_w1=round((pred["p_adv_w1"] - (1.0 if home_adv else 0.0)) ** 2, 4),
         )
+        if "p_adv_cv" in pred:  # council variant exists only on preds issued after 2026-07-12
+            pred["brier_cv"] = round((pred["p_adv_cv"] - (1.0 if home_adv else 0.0)) ** 2, 4)
         log(f"graded {pred['home']} v {pred['away']} -> {pred['final_score']} "
             f"(brier {pred['brier']:.3f})")
+
+
+def _council_p_adv(home, away, venue_country, matches):
+    """P(advance) under the council-variant params (CV_SHRINK_K / CV_ELO_SCALE).
+    Refits factors under the variant globals, then restores them."""
+    global SHRINK_K, ELO_SCALE
+    orig = SHRINK_K, ELO_SCALE
+    SHRINK_K, ELO_SCALE = CV_SHRINK_K, CV_ELO_SCALE
+    try:
+        return predict_match(home, away, venue_country, fit_factors(matches))["p_adv"]
+    finally:
+        SHRINK_K, ELO_SCALE = orig
 
 
 def _extreme_factors(factors):
@@ -375,8 +400,13 @@ def brier_summary(state):
     if not graded:
         return None
     mean = lambda key: sum(p[key] for p in graded) / len(graded)
-    return dict(n=len(graded), mean=round(mean("brier"), 4),
-                mean_w0=round(mean("brier_w0"), 4), mean_w1=round(mean("brier_w1"), 4))
+    out = dict(n=len(graded), mean=round(mean("brier"), 4),
+               mean_w0=round(mean("brier_w0"), 4), mean_w1=round(mean("brier_w1"), 4))
+    cv = [p["brier_cv"] for p in graded if "brier_cv" in p]
+    if cv:
+        out["n_cv"] = len(cv)
+        out["mean_cv"] = round(sum(cv) / len(cv), 4)
+    return out
 
 
 # --------------------------------------------------------------------- render
@@ -509,6 +539,10 @@ def render_tab(state, upcoming_preds, champion_odds, prev_odds, brier, n_played)
         variants = (f' Blend sanity: pure-Elo (w=0) Brier {brier["mean_w0"]:.3f}, '
                     f'pure-tournament (w=1) {brier["mean_w1"]:.3f}, '
                     f'blend {brier["mean"]:.3f}.')
+        if "mean_cv" in brier:
+            variants += (f' Council variant (K={CV_SHRINK_K}, scale {CV_ELO_SCALE:.0f}, '
+                         f'tracked from Jul 12): {brier["mean_cv"]:.3f} '
+                         f'on {brier["n_cv"]} matches.')
     return f"""<div class="section">
 <h2>World Cup 2026 — model predictions</h2>
 <div class="grid">{cards}</div>
@@ -621,6 +655,14 @@ def selftest():
     # perfect prediction -> Brier 0; coin flip on a certainty -> 0.25
     assert (1.0 - 1.0) ** 2 == 0.0
     assert (0.5 - 1.0) ** 2 == 0.25
+
+    # council variant: sane probability, and it must restore the global params
+    k0, s0 = SHRINK_K, ELO_SCALE
+    p_cv = _council_p_adv("Spain", "Qatar", "", [])
+    assert 0.5 < p_cv < 1.0, p_cv
+    assert (SHRINK_K, ELO_SCALE) == (k0, s0), "globals not restored"
+    # sharper scale => variant more extreme than headline on an empty fit
+    assert p_cv > predict_match("Spain", "Qatar", "", fit_factors([]))["p_adv"]
 
     # placeholder parsing
     m = PLACEHOLDER_RE.match("Round of 16 5 Winner")

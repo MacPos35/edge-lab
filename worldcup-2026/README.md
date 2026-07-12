@@ -6,7 +6,10 @@ dashboard (`../polymarket-edge-lab/dashboard.py` includes `wc_tab.html` — pres
 layer only, the frozen experiment is untouched).
 
 Design was council-reviewed (4 specialists: model / data / dashboard / integration)
-on 2026-07-05.
+on 2026-07-05. A second council sitting on 2026-07-12 studied the live loss numbers
+(`COUNCIL-2026-07-12.md`, backed by the leakage-free `backtest.py`): the headline
+model stays frozen, and a tuned variant (K=15, Elo scale 600, `p_adv_cv`) is graded
+alongside the w=0/w=1 sanity variants for the remaining matches.
 
 ## How it works (one script, one daily run)
 
