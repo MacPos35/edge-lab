@@ -511,8 +511,12 @@ def market_row(r):
     q = _html.escape(r["question"])
     qattr = _html.escape(r["question"].lower(), quote=True)
     barw = max(0, min(100, (r["prob"] or 0) * 100))
+    # sort keys for the client-side toolbar: latest implied prob (-1 = no snapshot
+    # yet, always sorts last) and whether the market is still open to buy into
+    prob_attr = f'{r["prob"]:.4f}' if r["prob"] is not None else "-1"
+    active_attr = "1" if r["outcome"] is None else "0"
     return (
-        f'<div class="mkt" data-q="{qattr}">'
+        f'<div class="mkt" data-q="{qattr}" data-prob="{prob_attr}" data-active="{active_attr}">'
         f'<div class="mkt-row">'
         f'<a class="m-q" href="{market_url(r)}" target="_blank" rel="noopener" title="{q}">'
         f'{q} <span class="ext">↗</span></a>'
@@ -544,6 +548,11 @@ def markets_tab(rows):
         '<div class="mkt-toolbar">'
         '<input id="mkt-filter" type="text" placeholder="Filter markets by name…" '
         'autocomplete="off">'
+        '<select id="mkt-sort" aria-label="Sort markets">'
+        '<option value="default">Sort: active · liquidity</option>'
+        '<option value="prob-desc">Sort: chance high → low</option>'
+        '<option value="prob-asc">Sort: chance low → high</option>'
+        '</select>'
         f'<span class="mkt-meta"><b id="mkt-count">{n}</b> shown · {n_active} active · '
         f'{n - n_active} resolved</span></div>'
         f'<div class="mkt-list">{head}{body}</div></div>')
@@ -1198,6 +1207,10 @@ border-radius:0;color:var(--txt);padding:11px 14px;font-size:16px;
 font-family:'Space Mono',monospace}
 #mkt-filter:focus{outline:none;border-color:var(--acc);box-shadow:3px 3px 0 var(--acc)}
 #mkt-filter::placeholder{color:var(--mut)}
+#mkt-sort{flex:0 1 auto;background:var(--bg);border:1.5px solid var(--edge);border-radius:0;
+color:var(--txt);padding:11px 10px;font-size:13px;font-family:'Space Mono',monospace;
+cursor:pointer;-webkit-appearance:none;appearance:none}
+#mkt-sort:focus{outline:none;border-color:var(--acc);box-shadow:3px 3px 0 var(--acc)}
 .mkt-meta{color:var(--mut);font-size:10.5px;white-space:nowrap;letter-spacing:.06em;
 text-transform:uppercase}
 .mkt-list{border:1.5px solid var(--edge);border-radius:0;background:var(--bg);overflow:hidden}
@@ -1584,6 +1597,29 @@ SCRIPT = """<script>
     });
     if (count) count.textContent = n;
   });
+
+  // sort toolbar: reorder rows by latest implied chance; open (buyable) markets
+  // always stay above resolved ones, rows without a snapshot sort last
+  var sortSel = document.getElementById('mkt-sort');
+  if (sortSel) {
+    var mktRows = Array.prototype.slice.call(
+      document.querySelectorAll('#tab-markets .mkt-list .mkt'));
+    mktRows.forEach(function(el, i){ el.dataset.i = i; });
+    var mktList = mktRows.length ? mktRows[0].parentNode : null;
+    sortSel.addEventListener('change', function(){
+      var mode = this.value;
+      var sorted = mktRows.slice().sort(function(a, b){
+        if (mode === 'default') return a.dataset.i - b.dataset.i;
+        var act = b.dataset.active - a.dataset.active;   // buyable first
+        if (act) return act;
+        var pa = parseFloat(a.dataset.prob), pb = parseFloat(b.dataset.prob);
+        var miss = (pa < 0) - (pb < 0);                  // no-snapshot rows last
+        if (miss) return miss;
+        return mode === 'prob-asc' ? pa - pb : pb - pa;
+      });
+      sorted.forEach(function(el){ mktList.appendChild(el); });
+    });
+  }
 
   document.addEventListener('click', function(e){
     var btn = e.target.closest('.morebtn');
