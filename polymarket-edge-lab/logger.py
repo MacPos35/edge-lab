@@ -93,7 +93,7 @@ def _matches_category(market):
 
 
 def _event_slug(m):
-    """Best public-URL slug: the event slug (clean, e.g. 'world-cup-winner') if present,
+    """Best public-URL slug: the event slug (clean, e.g. 'nba-finals-winner') if present,
     else the market's own slug. Returns None if neither exists."""
     for ev in m.get("events") or []:
         s = ev.get("slug")

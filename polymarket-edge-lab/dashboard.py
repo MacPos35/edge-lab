@@ -961,10 +961,9 @@ trail: what was changed, what was found, and what was decided — each entry dat
 these notes refer to are always current on the Overview and Health tabs; full detail lives in
 <code>REVIEW-2026-07-03.md</code> in the project folder.</p>
 
-<div class="panel"><h4 style="margin-top:0">2026-07-12 — Single-project focus + scheduled
-health check (maintenance, frozen parameters untouched)</h4>
-<p style="color:var(--mut)">Owner decision: the World Cup side-project was removed from the repo,
-the workflow and this dashboard — edge-lab is now <b>Polymarket-only</b>. Health check, all green:
+<div class="panel"><h4 style="margin-top:0">2026-07-12 — Scheduled health check
+(maintenance, frozen parameters untouched)</h4>
+<p style="color:var(--mut)">Health check, all green:
 newest snapshot 0.5&thinsp;h old (limit 6&thinsp;h); resolver labeling 98% on markets anchored
 2–13 days back (floor 10%); analyzer selftest recovers a +0.050 injected longshot bias as +0.055
 with the CI excluding zero. Collection is ahead of contract: the usable sample already exceeds the
@@ -972,7 +971,8 @@ with the CI excluding zero. Collection is ahead of contract: the usable sample a
 Also done: the one act sanctioned by council #3 — a dated holdout boundary
 (<code>HOLDOUT_BOUNDARY.md</code>, 2026-07-12T07:20Z): data anchored after that timestamp stays
 untouched for any future post-readout hypothesis. Per the chairman's standing rule the council was
-<b>not</b> reconvened on strategy; the frozen test, parameters and readout schedule are unchanged.</p></div>
+<b>not</b> reconvened on strategy; the frozen test, parameters and readout schedule are unchanged.
+The repo, workflow and this dashboard were also slimmed down to this single project.</p></div>
 
 <div class="panel" style="margin-top:16px"><h4 style="margin-top:0">2026-07-11 — Observability catch-up after the GitHub
 Actions migration (maintenance, frozen parameters untouched)</h4>
