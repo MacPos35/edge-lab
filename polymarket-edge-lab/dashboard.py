@@ -961,7 +961,20 @@ trail: what was changed, what was found, and what was decided — each entry dat
 these notes refer to are always current on the Overview and Health tabs; full detail lives in
 <code>REVIEW-2026-07-03.md</code> in the project folder.</p>
 
-<div class="panel"><h4 style="margin-top:0">2026-07-11 — Observability catch-up after the GitHub
+<div class="panel"><h4 style="margin-top:0">2026-07-12 — Single-project focus + scheduled
+health check (maintenance, frozen parameters untouched)</h4>
+<p style="color:var(--mut)">Owner decision: the World Cup side-project was removed from the repo,
+the workflow and this dashboard — edge-lab is now <b>Polymarket-only</b>. Health check, all green:
+newest snapshot 0.5&thinsp;h old (limit 6&thinsp;h); resolver labeling 98% on markets anchored
+2–13 days back (floor 10%); analyzer selftest recovers a +0.050 injected longshot bias as +0.055
+with the CI excluding zero. Collection is ahead of contract: the usable sample already exceeds the
+200-market pre-registered minimum with ~5 weeks still to run before the Aug 19 readout gate.
+Also done: the one act sanctioned by council #3 — a dated holdout boundary
+(<code>HOLDOUT_BOUNDARY.md</code>, 2026-07-12T07:20Z): data anchored after that timestamp stays
+untouched for any future post-readout hypothesis. Per the chairman's standing rule the council was
+<b>not</b> reconvened on strategy; the frozen test, parameters and readout schedule are unchanged.</p></div>
+
+<div class="panel" style="margin-top:16px"><h4 style="margin-top:0">2026-07-11 — Observability catch-up after the GitHub
 Actions migration (maintenance, frozen parameters untouched)</h4>
 <p style="color:var(--mut)">A code review found the monitoring/self-documentation layer still
 described the retired Windows Task Scheduler deployment. Fixes: <code>watchdog.py</code> now
@@ -1745,9 +1758,10 @@ This status could change under evolving MiCA enforcement — re-verify before an
 <div class="section"><h2>Current results</h2>{results_html(d)}</div>
 
 <div class="section"><h2>What the council decided (2026-07-02, project charter)</h2>{COUNCIL}
-<p style="color:var(--mut);font-size:13px;margin-top:10px">Latest check-in: council #3
-(2026-07-03) reviewed the strategy against live data and ruled <b>stay the course — no new
-tracks</b>; full verdict on the <a href="#notes">Lab notes</a> tab.</p></div>
+<p style="color:var(--mut);font-size:13px;margin-top:10px">Latest strategy check-in: council #3
+(2026-07-03) ruled <b>stay the course — no new tracks</b>, with a standing rule against
+reconvening. Latest maintenance check: 2026-07-12 — pipeline all green, repo now
+Polymarket-only, holdout boundary declared; details on the <a href="#notes">Lab notes</a> tab.</p></div>
 
 <div class="section"><h2>Owner's guide</h2>{GUIDE}</div>
 
@@ -1756,7 +1770,7 @@ tracks</b>; full verdict on the <a href="#notes">Lab notes</a> tab.</p></div>
 <div class="section"><h2>Next steps</h2><div class="panel"><ul class="clean">
 <li>Let the scheduled logger/resolver run — <b>the clock to the Aug 19 readout gate is the binding constraint.</b></li>
 <li>Check this dashboard weekly (Health tab first); watch the longshot <b>gap</b> and whether the holdout CI clears the cost line — informational only until readout.</li>
-<li><i>Optional 5-minute act sanctioned by council #3:</i> <code>git init</code> + a dated <code>HOLDOUT_BOUNDARY.md</code> ("data after this timestamp is holdout for any future test").</li>
+<li><i>Done 2026-07-12:</i> the act sanctioned by council #3 — repo is on GitHub and a dated <code>HOLDOUT_BOUNDARY.md</code> reserves data anchored after 2026-07-12T07:20Z for any future test.</li>
 <li>At the readout gate (2026-08-19), run the pre-registered holdout verdict once and write it up — the structural findings lead, whatever the verdict (see Lab notes).</li>
 <li>If pursuing further, get a Polish individual tax ruling (ORD-IN) on prediction-market P&amp;L classification.</li>
 <li>Keep the €200/month in a low-cost index fund meanwhile — the council's honest benchmark.</li>
