@@ -77,8 +77,10 @@ def gather():
                        f"{n_band_analyze} analyzer band markets")
         print(f"WARNING: {paper_error}", file=sys.stderr)
         paper = None
+        paper_lull_info = None
     else:
         paper = simulate_paper(trades, first_ts, now) if first_ts else None
+        paper_lull_info = paper_lull(conn, trades) if trades else None
 
     market_rows = collect_market_rows(conn)
     health = pipeline_health(conn, first_ts, last_ts, now) if first_ts else None
@@ -92,7 +94,7 @@ def gather():
         band_markets=band_markets, usable=len(rows),
         health=health, funnel=funnel, traj=traj,
         rows=rows, holdout=holdout, market_rows=market_rows, paper=paper,
-        paper_error=paper_error,
+        paper_error=paper_error, paper_lull=paper_lull_info,
         # progress = USABLE markets (resolved + valid T-24h snapshot), matching the
         # analyzer's n>=MIN_RESOLVED_MARKETS gate -- raw resolved overstates it
         pct_sample=min(100.0, 100.0 * len(rows) / config.MIN_RESOLVED_MARKETS),
@@ -375,6 +377,54 @@ def simulate_paper(trades, first_ts, now_ts):
         trades_per_month=trades_per_month, wins=wins, losses=n - wins,
         p_clean=p_clean, null_monthly=null_monthly,
     )
+
+
+def paper_lull(conn, trades):
+    """Explain a quiet Paper tab: how many recently-resolved band longshots were skipped
+    because the market wasn't liquid/tracked at T-24h (its first qualifying snapshot lands
+    inside the T-24h window). Presentation-only -- reads the same DB and frozen params the
+    selection uses, adds no state, and never changes what trades() returns.
+
+    Returns None when the newest settled trade is already the newest resolved band market
+    (nothing to explain), else a dict with the last-trade timestamp and the skip count.
+    """
+    last_trade_ts = max((t["ts"] for t in trades), default=None)
+    target = config.SNAPSHOT_HORIZON_HOURS * 3600
+    tol = config.SNAPSHOT_TOLERANCE_HOURS * 3600
+    lo_b, hi_b = config.LONGSHOT_BAND
+    markets = conn.execute(
+        "SELECT id, COALESCE(game_start_ts, resolves_ts) AS anchor_ts FROM markets "
+        "WHERE outcome IS NOT NULL AND COALESCE(game_start_ts, resolves_ts) IS NOT NULL"
+    ).fetchall()
+
+    skipped = 0
+    newest_band_anchor = None
+    for mk in markets:
+        if last_trade_ts is not None and mk["anchor_ts"] <= last_trade_ts:
+            continue  # only look at markets that resolved after the last settled trade
+        want_ts = mk["anchor_ts"] - target
+        snap = conn.execute(
+            "SELECT implied_prob, ABS(ts - ?) AS dist FROM snapshots "
+            "WHERE market_id = ? AND liquidity >= ? ORDER BY dist ASC LIMIT 1",
+            (want_ts, mk["id"], config.MIN_LIQUIDITY_USD),
+        ).fetchone()
+        if not snap or not (lo_b <= snap["implied_prob"] < hi_b):
+            continue  # not a longshot at the T-24h anchor -- correctly not a trade
+        if newest_band_anchor is None or mk["anchor_ts"] > newest_band_anchor:
+            newest_band_anchor = mk["anchor_ts"]
+        if snap["dist"] <= tol:
+            continue  # this one did qualify (paper_trades already counts it)
+        first = conn.execute(
+            "SELECT MIN(ts) f FROM snapshots WHERE market_id = ? AND liquidity >= ?",
+            (mk["id"], config.MIN_LIQUIDITY_USD),
+        ).fetchone()["f"]
+        if first is not None and first > want_ts + tol:
+            skipped += 1  # never liquid/tracked early enough for a T-24h snapshot
+
+    if skipped == 0 or newest_band_anchor is None:
+        return None
+    return dict(last_trade_ts=last_trade_ts, skipped=skipped,
+                newest_band_anchor=newest_band_anchor)
 
 
 # --------------------------------------------------------------------- render helpers
@@ -718,6 +768,23 @@ def paper_tab(d):
         stat("Trade rate", f'≈{p["trades_per_month"]:.0f}/mo', "at current band flow"),
     ])
 
+    lull = ""
+    ll = d.get("paper_lull")
+    if ll:
+        since = datetime.fromtimestamp(ll["last_trade_ts"], timezone.utc).strftime("%b %d, %H:%M UTC")
+        n_sk = ll["skipped"]
+        plural = "s" if n_sk != 1 else ""
+        lull = (
+            '<div class="panel" style="margin-top:14px;border-color:rgba(255,176,32,.45)">'
+            '<p style="margin:0;color:var(--mut)">'
+            f'<b>Quiet since {since}.</b> No new paper trade has settled because no qualifying '
+            f'longshot has resolved since then — <b>{n_sk}</b> more recent {lo_b:.2f}–{hi_b:.2f} '
+            f'band market{plural} resolved but {"was" if n_sk == 1 else "were"} skipped: '
+            'the market only became liquid (≥ '
+            f'{eur(config.MIN_LIQUIDITY_USD)}) close to its event, so it had no snapshot within '
+            f'±{config.SNAPSHOT_TOLERANCE_HOURS}h of T−24h to price from. The strategy only trades '
+            'markets liquid a full day ahead — this is the filter working, not a stall.</p></div>')
+
     svg, pjson = pnl_chart(p)
     chart = (
         '<div class="panel" style="margin-top:14px"><h4 style="margin-top:0">Paper equity curve '
@@ -783,7 +850,7 @@ def paper_tab(d):
                '<h4 style="margin-top:0;color:var(--warn)">Why you cannot bank the number above</h4>'
                f'<ul class="clean" style="color:var(--mut)">{cav}</ul></div>')
 
-    return (head + f'<div class="section"><div class="grid">{cards}</div>{chart}{assumptions}'
+    return (head + f'<div class="section"><div class="grid">{cards}</div>{lull}{chart}{assumptions}'
             f'{caveats}{table}</div>')
 
 
